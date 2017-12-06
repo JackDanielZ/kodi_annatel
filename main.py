@@ -159,7 +159,8 @@ def _channel_select(url):
     play_item = xbmcgui.ListItem()
     #'special://temp/channel.strm')
     # Pass the item to the Kodi player.
-    xbmc.Player ().play('special://temp/channel.strm', play_item, False) 
+    f = open(local, 'r')
+    xbmc.Player().play(f.read(), play_item, False)
     #xbmcplugin.setResolvedUrl(_handle, True, play_item)
 
 def list_categories():
