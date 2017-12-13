@@ -173,9 +173,7 @@ def list_categories():
     # for this type of content.
     xbmcplugin.setContent(_handle, 'videos')
 
-    """xml_data = DownloadBinary('http://www.annatel.tv/api/getchannels?login=%s&password=%s')"""
-    xml_file = open('/tmp/annatel.xml', 'r')
-    xml_data = xml_file.read()
+    xml_data = DownloadBinary('http://www.annatel.tv/api/getchannels?login='+xbmcplugin.getSetting(_handle, "username")+'&password='+xbmcplugin.getSetting(_handle, "password"))
     parsed_xml = ET.fromstring(xml_data)
 
     for channel in parsed_xml.findall('channel'):
