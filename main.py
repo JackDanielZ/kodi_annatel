@@ -9,6 +9,7 @@ import urllib2
 import io
 from urllib import urlencode
 from urlparse import parse_qsl
+import xbmc
 import xbmcgui
 import xbmcplugin
 import xml.etree.ElementTree as ET
@@ -146,30 +147,28 @@ def _channel_ts_data_get(base, url):
 
 """
 
+
 def _channel_select(url):
     m3u8_data = io.StringIO(unicode(DownloadBinary(url)))
     last_line = None
+
     for i in m3u8_data.readlines():
         last_line = i
-    local = xbmc.translatePath('special://temp/channel.strm')
-    print(local)
-    strm_file = open(local, 'w');
-    strm_file.write(url.rsplit('/', 1)[0] + '/' + last_line)
-    strm_file.close()
+
+    uri = url.rsplit('/', 1)[0] + '/' + last_line
     play_item = xbmcgui.ListItem()
-    #'special://temp/channel.strm')
-    # Pass the item to the Kodi player.
-    f = open(local, 'r')
-    xbmc.Player().play(f.read(), play_item, False)
-    #xbmcplugin.setResolvedUrl(_handle, True, play_item)
+
+    xbmc.Player().play(uri, play_item, False)
+
 
 def list_categories():
     """
     Create the list of video categories in the Kodi interface.
     """
+    print('Listing channels')
     # Set plugin category. It is displayed in some skins as the name
     # of the current section.
-    xbmcplugin.setPluginCategory(_handle, 'My Video Collection')
+    xbmcplugin.setPluginCategory(_handle, 'Annatel')
     # Set plugin content. It allows Kodi to select appropriate views
     # for this type of content.
     xbmcplugin.setContent(_handle, 'videos')
@@ -178,43 +177,27 @@ def list_categories():
     xml_file = open('/tmp/annatel.xml', 'r')
     xml_data = xml_file.read()
     parsed_xml = ET.fromstring(xml_data)
+
     for channel in parsed_xml.findall('channel'):
         name = channel.find("name").text
         logo = channel.find("logo").text
         url = channel.find("url").text.strip()
-        list_item = xbmcgui.ListItem(label=name)
-        list_item.setArt({'icon': logo})
+
+        try:
+            program_title = channel.find("program_title").text
+        except AttributeError:
+            program_title = ''
+
+        list_item = xbmcgui.ListItem(label=name, thumbnailImage=logo)
+        list_item.setInfo('Video', {
+            'title': program_title
+        })
         list_item.setProperty('IsPlayable', 'true')
         call = get_url(action='channel_select', url=url)
+
         xbmcplugin.addDirectoryItem(_handle, call, list_item, False)
-    
-    # Get video categories
-    categories = get_categories()
-    # Iterate through categories
-    for category in categories:
-        # Create a list item with a text label and a thumbnail image.
-        list_item = xbmcgui.ListItem(label=category)
-        # Set graphics (thumbnail, fanart, banner, poster, landscape etc.) for the list item.
-        # Here we use the same image for all items for simplicity's sake.
-        # In a real-life plugin you need to set each image accordingly.
-        list_item.setArt({'thumb': VIDEOS[category][0]['thumb'],
-                          'icon': VIDEOS[category][0]['thumb'],
-                          'fanart': VIDEOS[category][0]['thumb']})
-        # Set additional info for the list item.
-        # Here we use a category name for both properties for for simplicity's sake.
-        # setInfo allows to set various information for an item.
-        # For available properties see the following link:
-        # http://mirrors.xbmc.org/docs/python-docs/15.x-isengard/xbmcgui.html#ListItem-setInfo
-        list_item.setInfo('video', {'title': category, 'genre': category})
-        # Create a URL for a plugin recursive call.
-        # Example: plugin://plugin.video.example/?action=listing&category=Animals
-        url = get_url(action='listing', category=category)
-        # is_folder = True means that this item opens a sub-list of lower level items.
-        is_folder = True
-        # Add our item to the Kodi virtual folder listing.
-        xbmcplugin.addDirectoryItem(_handle, url, list_item, is_folder)
-    # Add a sort method for the virtual folder items (alphabetically, ignore articles)
-#    xbmcplugin.addSortMethod(_handle, xbmcplugin.SORT_METHOD_LABEL_IGNORE_THE)
+
+    xbmc.executebuiltin('Container.SetViewMode(%d)' % 500)
     # Finish creating a virtual folder.
     xbmcplugin.endOfDirectory(_handle)
 
