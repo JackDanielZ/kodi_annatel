@@ -53,7 +53,7 @@ def _channel_select(url):
     for i in m3u8_data.readlines():
         last_line = i
 
-    uri = url.rsplit('/', 1)[0] + '/' + last_line
+    uri = url.rsplit('/', 1)[0] + '/' + last_line.strip()
     play_item = xbmcgui.ListItem()
 
     xbmc.Player().play(uri, play_item, False)
