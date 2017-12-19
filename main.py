@@ -5,125 +5,178 @@
 # License: GPL v.3 https://www.gnu.org/copyleft/gpl.html
 
 import sys
-import urllib2
 import io
-from urllib import urlencode
 from urlparse import parse_qsl
+from lib.utils import Utils
 import xbmc
 import xbmcgui
 import xbmcplugin
 import xml.etree.ElementTree as ET
 
 
-def DownloadBinary(url):
-    response = None
-    urlResponse = None
-    try:
-        urlResponse = urllib2.urlopen(url)
-        if (urlResponse.code == 200): # 200 = OK
-            response = urlResponse.read()
-    except:
-        xbmcgui.Dialog().ok('tric', urlResponse.code)
-        pass
-    finally:
-        if (urlResponse is not None):
-            urlResponse.close()
-    return response
+class Annatel:
+    def __init__(self):
+        self._url = sys.argv[0]
+        self._handle = int(sys.argv[1])
+        self._channels_uri = 'http://www.annatel.tv/api/getchannels'
+        self._vod_uri = 'http://www.annatel.tv/api/xbmc/vod/date'
+        self._vod_thumb = 'http://bestmediainfo.com/wp-content/uploads/2016/03/video-on-demand.jpg'
+        self.channels_map = {}
 
-# Get the plugin url in plugin:// notation.
-_url = sys.argv[0]
-# Get the plugin handle as an integer number.
-_handle = int(sys.argv[1])
+        self.map_channels()
 
-def get_url(**kwargs):
-    """
-    Create a URL for calling the plugin recursively from the given set of keyword arguments.
+    def channel_select(self, url):
+        m3u8_data = io.StringIO(unicode(Utils.download_binary(url)))
+        last_line = None
 
-    :param kwargs: "argument=value" pairs
-    :type kwargs: dict
-    :return: plugin call URL
-    :rtype: str
-    """
-    return '{0}?{1}'.format(_url, urlencode(kwargs))
+        for i in m3u8_data.readlines():
+            last_line = i
 
-def _channel_select(url):
-    m3u8_data = io.StringIO(unicode(DownloadBinary(url)))
-    last_line = None
+        uri = url.rsplit('/', 1)[0] + '/' + last_line.strip()
+        play_item = xbmcgui.ListItem()
 
-    for i in m3u8_data.readlines():
-        last_line = i
+        xbmc.Player().play(uri, play_item, False)
 
-    uri = url.rsplit('/', 1)[0] + '/' + last_line.strip()
-    play_item = xbmcgui.ListItem()
+    def list_channels(self):
+        xbmcplugin.setPluginCategory(self._handle, 'Annatel')
+        xbmcplugin.setContent(self._handle, 'videos')
 
-    xbmc.Player().play(uri, play_item, False)
+        listing = self.create_listing(xml=None)
+        xbmcplugin.addDirectoryItems(self._handle, listing, len(listing))
 
-def list_channels():
-    """
-    Create the list of video categories in the Kodi interface.
-    """
-    print('Listing channels')
-    # Set plugin category. It is displayed in some skins as the name
-    # of the current section.
-    xbmcplugin.setPluginCategory(_handle, 'Annatel')
-    # Set plugin content. It allows Kodi to select appropriate views
-    # for this type of content.
-    xbmcplugin.setContent(_handle, 'videos')
+        list_item, call = self.create_item(label='VOD', thumbnail_image=self._vod_thumb, action='vod')
+        xbmcplugin.addDirectoryItem(self._handle, call, list_item, True)
 
-    xml_data = DownloadBinary('http://www.annatel.tv/api/getchannels?login='+xbmcplugin.getSetting(_handle, "username")+'&password='+xbmcplugin.getSetting(_handle, "password"))
-    parsed_xml = ET.fromstring(xml_data)
+        xbmc.executebuiltin('Container.SetViewMode(%d)' % 500)
+        xbmcplugin.endOfDirectory(self._handle)
 
-    for channel in parsed_xml.findall('channel'):
-        name = channel.find("name").text
-        logo = channel.find("logo").text
-        url = channel.find("url").text.strip()
-
+    def vod(self):
         try:
-            program_title = channel.find("program_title").text
-        except AttributeError:
-            program_title = ''
+            xml_data = Utils.download_binary(self._vod_uri + '?login=' +
+                                             xbmcplugin.getSetting(self._handle, "username") + '&password=' +
+                                             xbmcplugin.getSetting(self._handle, "password"))
+        except StandardError as e:
+            xbmcgui.Dialog().ok('tric', e)
+            return
 
-        list_item = xbmcgui.ListItem(label=name, thumbnailImage=logo)
+        parsed_xml = ET.fromstring(xml_data)
+
+        listing = self.create_listing(parsed_xml)
+        xbmcplugin.addDirectoryItems(self._handle, listing, len(listing))
+
+        xbmc.executebuiltin('Container.SetViewMode(%d)' % 500)
+        xbmcplugin.endOfDirectory(self._handle)
+
+    def map_channels(self):
+        try:
+            xml_data = Utils.download_binary(self._channels_uri + '?login=' +
+                                             xbmcplugin.getSetting(self._handle, "username") + '&password=' +
+                                             xbmcplugin.getSetting(self._handle, "password"))
+        except StandardError as e:
+            xbmcgui.Dialog().ok('tric', e)
+            return
+
+        parsed_xml = ET.fromstring(xml_data)
+
+        for channel in parsed_xml.findall('channel'):
+            try:
+                name = channel.find("name").text
+            except AttributeError:
+                name = ''
+
+            try:
+                logo = channel.find("logo").text
+            except AttributeError:
+                logo = ''
+
+            try:
+                url = channel.find("url").text.strip()
+            except AttributeError:
+                url = None
+
+            try:
+                program_title = channel.find("program_title").text
+            except AttributeError:
+                program_title = ''
+
+            self.channels_map[name] = {
+                "name": name,
+                "logo": logo,
+                "url": url,
+                "program_title": program_title
+            }
+
+    def create_listing(self, xml):
+        listing = []
+        mapping = {}
+        is_folder = True if xml is None else False
+        action = 'vod_select' if xml is None else 'channel_select'
+
+        if xml is None:
+            mapping = self.channels_map
+        else:
+            for channel in xml.findall('channel'):
+                try:
+                    name = channel.find("name").text
+                except AttributeError:
+                    continue
+
+                if name in self.channels_map:
+                    mapping[name] = self.channels_map[name]
+
+        for channel, value in mapping.iteritems():
+            if value.url is not None:
+                name = value.name
+                logo = value.logo
+                url = self._url if xml is None else value.url
+                program_title = value.program_title
+
+                list_item = xbmcgui.ListItem(label=name, thumbnailImage=logo)
+
+                if xml is not None:
+                    list_item.setProperty('IsPlayable', 'true')
+                    list_item.setInfo('Video', {
+                        'title': program_title
+                    })
+
+                call = Utils.get_url(action=action, url=url)
+                listing.append((call, list_item, is_folder))
+
+        return listing
+
+    def create_item(self, label, thumbnail_image, action, url):
+        list_item = xbmcgui.ListItem(label=label, thumbnailImage=thumbnail_image)
         list_item.setInfo('Video', {
-            'title': program_title
+            'title': label
         })
-        list_item.setProperty('IsPlayable', 'true')
-        call = get_url(action='channel_select', url=url)
+        call = Utils.get_url(action=action, url=url if url is not None else self._url)
 
-        xbmcplugin.addDirectoryItem(_handle, call, list_item, False)
-
-    xbmc.executebuiltin('Container.SetViewMode(%d)' % 500)
-    # Finish creating a virtual folder.
-    xbmcplugin.endOfDirectory(_handle)
+        return list_item, call
 
 
-def router(paramstring):
+def router(param_string):
     """
     Router function that calls other functions
-    depending on the provided paramstring
+    depending on the provided param_string
 
-    :param paramstring: URL encoded plugin paramstring
-    :type paramstring: str
+    :param param_string: URL encoded plugin paramstring
+    :type param_string: str
     """
-    # Parse a URL-encoded paramstring to the dictionary of
+    # Parse a URL-encoded param_string to the dictionary of
     # {<parameter>: <value>} elements
-    params = dict(parse_qsl(paramstring))
-    # Check the parameters passed to the plugin
+    params = dict(parse_qsl(param_string))
+    annatel = Annatel()
+
     if params:
         if params['action'] == 'channel_select':
-            _channel_select(params['url'])
+            annatel.channel_select(params['url'])
+        elif params['action'] == 'vod':
+            annatel.vod()
         else:
-            # If the provided paramstring does not contain a supported action
-            # we raise an exception. This helps to catch coding errors,
-            # e.g. typos in action names.
-            raise ValueError('Invalid paramstring: {0}!'.format(paramstring))
+            raise ValueError('Invalid param_string: {0}!'.format(param_string))
     else:
-        # If the plugin is called from Kodi UI without any parameters,
-        # display the list of video categories
-        list_channels()
+        annatel.list_channels()
 
 
 if __name__ == '__main__':
-    # Call the router function and pass the plugin call parameters to it.
-    # We use string slicing to trim the leading '?' from the plugin call paramstring
     router(sys.argv[2][1:])
