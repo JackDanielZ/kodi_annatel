@@ -1,4 +1,5 @@
 import urllib2
+import xbmcplugin
 from urllib import urlencode
 
 
@@ -20,10 +21,16 @@ class Utils:
                 response = url_response.read()
         except urllib2.URLError:
             raise StandardError(url_response.code)
-            xbmcgui.Dialog().ok('tric', url_response.code)
             pass
         finally:
             if url_response is not None:
                 url_response.close()
 
         return response
+
+    @staticmethod
+    def build_uri(handle, url, **kwargs):
+        return "{0}?login={1}&password={2}&{3}".format(url,
+                                                       xbmcplugin.getSetting(handle, "username"),
+                                                       xbmcplugin.getSetting(handle, "password"),
+                                                       urlencode(kwargs))
