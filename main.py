@@ -17,13 +17,14 @@ class Annatel:
     def __init__(self):
         self._url = sys.argv[0]
         self._handle = int(sys.argv[1])
-        self._plugin_id = 'annatel'
+        self._plugin_id = 'plugin.video.annatel'
         self._media_url = 'special://home/addons/{0}/resources/'.format(self._plugin_id)
         self._channels_uri = 'http://www.annatel.tv/api/getchannels'
         self._vod_uri = 'http://www.annatel.tv/api/xbmc/vod/date'
         self._vod_thumb = self._media_url + 'vod.jpg'
         self._cal_thumb = self._media_url + 'calendar.png'
         self._channels_map = {}
+        self._channels_list = []
 
         self.map_channels()
 
@@ -43,7 +44,7 @@ class Annatel:
         xbmcplugin.setPluginCategory(self._handle, 'Annatel')
         xbmcplugin.setContent(self._handle, 'movies')
 
-        listing = self.create_listing(xml=None)
+        listing = self.create_listing(list_type='live')
         xbmcplugin.addDirectoryItems(self._handle, listing, len(listing))
 
         list_item, call = self.create_item(label='VOD', thumbnail_image=self._vod_thumb, action='vod')
@@ -54,15 +55,7 @@ class Annatel:
         xbmcplugin.setPluginCategory(self._handle, 'Annatel')
         xbmcplugin.setContent(self._handle, 'movies')
 
-        try:
-            xml_data = Utils.download_binary(Utils.build_uri(self._handle, self._vod_uri))
-        except StandardError as e:
-            xbmcgui.Dialog().ok('tric', e)
-            return
-
-        parsed_xml = ET.fromstring(xml_data)
-
-        listing = self.create_listing(parsed_xml)
+        listing = self.create_listing(list_type='vod')
         xbmcplugin.addDirectoryItems(self._handle, listing, len(listing))
         xbmcplugin.endOfDirectory(self._handle)
 
@@ -159,19 +152,27 @@ class Annatel:
                 return None
 
     def map_channels(self):
+        i = 0
         try:
             xml_data = Utils.download_binary(Utils.build_uri(self._handle, self._channels_uri))
         except StandardError as e:
             xbmcgui.Dialog().ok('tric', e)
             return
 
+        try:
+            vod_xml_data = Utils.download_binary(Utils.build_uri(self._handle, self._vod_uri))
+        except StandardError as e:
+            xbmcgui.Dialog().ok('tric', e)
+            return
+
         parsed_xml = ET.fromstring(xml_data)
+        vod_parsed_xml = ET.fromstring(vod_xml_data)
 
         for channel in parsed_xml.findall('channel'):
             try:
                 name = channel.find("name").text.encode('utf-8').strip()
             except AttributeError:
-                name = ''
+                name = None
 
             try:
                 logo = channel.find("logo").text.encode('utf-8')
@@ -188,53 +189,58 @@ class Annatel:
             except AttributeError:
                 program_title = ''
 
-            self._channels_map[name] = {
-                "name": name,
-                "logo": logo,
-                "url": url,
-                "program_title": program_title
-            }
+            if name is not None:
+                self._channels_list.append(name)
+                self._channels_map[name] = {
+                    "name": name,
+                    "logo": logo,
+                    "url": url,
+                    "program_title": program_title
+                }
 
-    def create_listing(self, xml):
+                for vod_channel in vod_parsed_xml.findall('channel'):
+                    try:
+                        vod_name = vod_channel.find("name").text.encode('utf-8').strip()
+                    except AttributeError:
+                        continue
+
+                    if vod_name == name:
+                        self._channels_map[name]['id'] = vod_channel.find('stream').text.encode('utf-8').strip()
+
+    def create_listing(self, list_type):
         listing = []
-        mapping = {}
-        is_folder = False if xml is None else True
-        action = 'channel_select' if xml is None else 'vod_channel'
+        is_live = list_type != 'vod'
+        is_folder = False if is_live else True
+        action = 'channel_select' if is_live else 'vod_channel'
 
-        if xml is None:
-            mapping = self._channels_map
-        else:
-            for channel in xml.findall('channel'):
-                try:
-                    name = channel.find("name").text.encode('utf-8').strip()
-                except AttributeError:
-                    continue
+        for channel in self._channels_list:
+            call = None
 
-                if name in self._channels_map:
-                    mapping[name] = self._channels_map[name]
-                    mapping[name]['id'] = channel.find('stream').text.encode('utf-8').strip()
+            if channel in self._channels_map:
+                value = self._channels_map[channel]
 
-        for channel, value in mapping.iteritems():
-            if value['url'] is not None:
-                name = value['name']
-                logo = value['logo']
-                url = value['url'] if xml is None else self._url
-                program_title = value['program_title']
+                if value['url'] is not None:
+                    name = value['name']
+                    logo = value['logo']
+                    url = value['url'] if is_live else self._url
+                    program_title = value['program_title']
 
-                list_item = xbmcgui.ListItem(label=name)
-                list_item.setArt({'thumb': logo})
+                    list_item = xbmcgui.ListItem(label=name)
+                    list_item.setArt({'thumb': logo})
 
-                if xml is None:
-                    list_item.setProperty('IsPlayable', 'true')
-                    list_item.setInfo('video', {
-                        'title': program_title
-                    })
-                    call = Utils.get_url(action=action, url=url)
-                else:
-                    channel_id = value['id']
-                    call = Utils.get_url(action=action, url=url, channel=channel_id)
+                    if is_live:
+                        list_item.setProperty('IsPlayable', 'true')
+                        list_item.setInfo('video', {
+                            'title': program_title
+                        })
+                        call = Utils.get_url(action=action, url=url)
+                    else:
+                        if 'id' in value:
+                            channel_id = value['id']
+                            call = Utils.get_url(action=action, url=url, channel=channel_id)
 
-                listing.append((call, list_item, is_folder))
+                    if call is not None:
+                        listing.append((call, list_item, is_folder))
 
         return listing
 
@@ -263,6 +269,7 @@ def router(param_string):
     annatel = Annatel()
 
     if params:
+        print params
         if params['action'] == 'channel_select':
             annatel.channel_select(params['url'])
         elif params['action'] == 'vod':

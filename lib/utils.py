@@ -9,7 +9,8 @@ class Utils:
 
     @staticmethod
     def get_url(url, **kwargs):
-        return '{0}?{1}'.format(url, urlencode(kwargs))
+        op = '?' if '?' not in url else '&'
+        return '{0}{1}{2}'.format(url, op, urlencode(kwargs))
 
     @staticmethod
     def download_binary(url):
