@@ -5,7 +5,7 @@
 
 import sys
 import io
-from urlparse import parse_qsl
+from urllib.parse import parse_qsl
 from lib.utils import Utils
 import xbmc
 import xbmcgui
@@ -269,7 +269,6 @@ def router(param_string):
     annatel = Annatel()
 
     if params:
-        print params
         if params['action'] == 'channel_select':
             annatel.channel_select(params['url'])
         elif params['action'] == 'vod':

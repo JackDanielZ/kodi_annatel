@@ -1,6 +1,7 @@
-import urllib2
 import xbmcplugin
-from urllib import urlencode
+from urllib.parse import urlencode
+from urllib.request import urlopen
+from urllib.error import URLError
 
 
 class Utils:
@@ -9,18 +10,19 @@ class Utils:
 
     @staticmethod
     def get_url(url, **kwargs):
-        op = '?' if '?' not in url else '&'
-        return '{0}{1}{2}'.format(url, op, urlencode(kwargs))
+        uri = url if isinstance(url, str) else url.decode("utf-8")
+        op = '?' if '?' not in uri else '&'
+        return '{0}{1}{2}'.format(uri, op, urlencode(kwargs))
 
     @staticmethod
     def download_binary(url):
         response = None
         url_response = None
         try:
-            url_response = urllib2.urlopen(url)
+            url_response = urlopen(url)
             if url_response.code == 200:
                 response = url_response.read()
-        except urllib2.URLError:
+        except URLError:
             raise StandardError(url_response.code)
             pass
         finally:

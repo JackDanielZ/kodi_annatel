@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<addon id="plugin.video.annatel" version="0.0.1" name="Annatel" provider-name="Jo, JackDanielZ">
+<addon id="plugin.video.annatel" version="0.0.2" name="Annatel" provider-name="Jo, JackDanielZ">
 <requires>
-  <import addon="xbmc.python" version="2.24.0"/>
+  <import addon="xbmc.python" version="3.0.0"/>
 </requires>
 <extension point="xbmc.python.pluginsource" library="main.py">
   <provides>video</provides>
